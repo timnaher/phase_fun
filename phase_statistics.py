@@ -1,141 +1,25 @@
 # %%
+import cmath
 from curses.ascii import RS
+from math import *
+
+import colorednoise as cn
+import matplotlib.pyplot as plt
 import numpy as np
 import scipy
-from scipy.fft import fft, fftshift
 import scipy.signal as sig
-from scipy import stats
-from math import *
-import cmath
 from fooof import FOOOF
+from scipy import stats
+from scipy.fft import fft, fftshift
 from scipy.signal import savgol_filter
-import colorednoise as cn
-
-import matplotlib.pyplot as plt
+import tqdm
 
 plt.style.use('dark_background')
 
-
-from sim_tools import *
 from plotting_tools import *
+from sim_tools import *
 
-
-# %%
-oscillation_freq = 10
-FS               = 1000
-WIN_SIZE         = 100
-window_stop      = 500
-PROP_LENGTH      = 500
-
-# create lfp data and groundtruth phase
-lfp, pdata = sim_lfp(oscillation_freq,nChannels=1,eps=0.1,FS=FS,nSamples=1000,pink_noise_level=0.5)
-
-
-# this function propagates the phase based on a selected fourier coefficient of the lfp
-prop_phase = propagate_phase(lfp,WIN_SIZE=WIN_SIZE,
-                            TARGET_FREQ=oscillation_freq,
-                            FS=FS,
-                            NPAD=1000,
-                            PROP_LENGTH=PROP_LENGTH,
-                            window_stop=window_stop)
-# plot both signal and phase
-#plot_phase_diffusion(lfp,pdata,DIFFSTART=window_stop-WIN_SIZE,PROP_LENGTH=PROP_LENGTH,prop_phase=prop_phase)
-
-
-
-# sample to sample distance between groundtruth and propagated phase
-gtruth = pdata[window_stop-WIN_SIZE: (window_stop-WIN_SIZE+PROP_LENGTH)]
-
-circ_distances = np.zeros(len(gtruth))
-for i in range(len(gtruth)):
-    circ_distances[i] = np.angle(cmath.exp(1j*gtruth[i])/cmath.exp(1j*prop_phase[i])) * np.pi/180
-
-plot_phase_diffusion(lfp,pdata,DIFFSTART=window_stop-WIN_SIZE,PROP_LENGTH=PROP_LENGTH,prop_phase=prop_phase)
-
-
-fig, ax = plt.subplots(2,1,figsize=(10,10))
-ax[0].plot(circ_distances, label='circ_distances',color="orange")
-ax[1].plot(gtruth, label='gtruth',color="orange")
-ax[1].plot(prop_phase, label='prop_phase',color="red")
-ax[0].set_title('circ_distances',color="white")
-ax[1].set_title('gtruth',color="white")
-ax[1].set_title('prop_phase',color="white")
-
-
-def generate_gtruth_and_pphase(oscillation_freq = 10,
-                               FS = 1000,
-                               WIN_SIZE = 100,
-                               window_stop = 500,
-                               PROP_LENGTH = 500,
-                               eps = 0.1):
-
-    lfp, pdata = sim_lfp(oscillation_freq,nChannels=1,eps=eps,FS=FS,nSamples=1000,pink_noise_level=0.5)
-    prop_phase = propagate_phase(lfp,WIN_SIZE=WIN_SIZE,
-                            TARGET_FREQ=oscillation_freq,
-                            FS=FS,
-                            NPAD=1000,
-                            PROP_LENGTH=PROP_LENGTH,
-                            window_stop=window_stop)
-    gtruth = pdata[window_stop-WIN_SIZE: (window_stop-WIN_SIZE+PROP_LENGTH)]
-   
-
-    return gtruth, prop_phase
-
-def pairwise_circ_distance(gtruth,prop_phase):
-
-    circ_distances = np.zeros(len(gtruth))
-    for i in range(len(gtruth)):
-        circ_distances[i] = np.angle(cmath.exp(1j*gtruth[i])/cmath.exp(1j*prop_phase[i])) * np.pi/180
-
-    return circ_distances
-
-# %%
-
-niter = 1000
-distances = np.empty((500,len(gtruth)))
-for i in range(500):
-    gtruth, prop_phase = generate_gtruth_and_pphase(eps =0.1)
-    circ_distances     = pairwise_circ_distance(gtruth,prop_phase)
-    distances[:,i] = circ_distances
-
-from statistics import stdev
-stds = stats.circstd(distances,axis=1)
-
-mean_distance = np.sin(stats.circmean(distances,axis=0))
-
-fig, ax = plt.subplots(2,1,figsize=(10,10))
-ax[0].plot(mean_distance,label='sin(mean_distance)',color="orange")
-ax[0].fill_between(range(len(mean_distance)),mean_distance-stds,mean_distance+stds,alpha=0.6,label='circ std')
-ax[0].set_title('Mean distance from propgated to true phase with phase diffusion strength of 0.1',color="white")
-ax[0].legend()
-ax[0].set_xlabel('Sample')
-ax[0].set_ylabel('Sin(distance [rad])')
-distances = np.empty((500,len(gtruth)))
-for i in range(500):
-    gtruth, prop_phase = generate_gtruth_and_pphase(eps =0.9)
-    circ_distances     = pairwise_circ_distance(gtruth,prop_phase)
-    distances[:,i] = circ_distances
-
-from statistics import stdev
-stds = stats.circstd(distances,axis=1)
-
-mean_distance = np.sin(stats.circmean(distances,axis=0))
-
-ax[1].plot(mean_distance,label='sin(mean_distance)',color="orange")
-ax[1].fill_between(range(len(mean_distance)),mean_distance-stds,mean_distance+stds,alpha=0.6,label='circ std')
-ax[1].set_title('Mean distance from propgated to true phase with phase diffusion strength of 0.9',color="white")
-ax[1].legend()
-ax[1].set_xlabel('Sample')
-ax[1].set_ylabel('Sin(distance [rad])')
-
-
-
-
-
-
-
-# %%
-
+# %% class definition
 class PhaseSimulator:
     def __init__(self,oscillation_freq = 10, # frequency of oscillation
                  FS                    = 1000, # sampling frequency
@@ -246,37 +130,59 @@ class PhaseSimulator:
         ax.set_ylabel('Sin(distance [rad])')
         plt.show()
         return fig, ax
-# %%
-sim_eps0_1 = PhaseSimulator(eps=0.1,niter=1000,oscillation_freq=10,PROP_LENGTH=500,random_start=True,use_asym_taper=True,k=2)
-sim_eps0_1.experiment()
 
-fig, ax = plt.subplots(3,1,figsize=(8,8))
-ax[0].plot(abs(sum(sim_eps0_1.Rs)/1000),label='R')
-ax[0].set_title(f'R with phase diffusion strength of {str(sim_eps0_1.eps)}', color="white")
-ax[0].set_xlabel('Sample')
+
+# %% Analysis 1
+
+eps   = 0.1
+niter = 5000
+
+def analysis_1(ks):
+    """ analysis 1 """
+    fig, ax = plt.subplots(len(ks),1,figsize=(12,18))
+
+
+    for i,k in enumerate(ks):
+        sim = PhaseSimulator(oscillation_freq=10,FS=1000,WIN_SIZE=100,window_stop=500,PROP_LENGTH=500,eps=eps,niter=niter,random_start=True,pink_noise_level=0.5,k=k)
+        sim.experiment()
+        ax[i].plot(abs(sum(sim.Rs)/niter),label='R')
+        ax[i].plot(sim.taper/np.max(sim.taper),alpha=0.5,label='normalized taper')
+        ax[i].set_title(f'k = {str(k)}', color="white")
+        ax[i].set_ylabel('R')
+        ax[i].legend()
+    plt.show()
+    return fig, ax
+
+analysis_1([-5,-2,0,2,5])
+
+
+
+ # %%
+sim = PhaseSimulator(eps=eps,niter=niter,oscillation_freq=10,PROP_LENGTH=500,random_start=True,k=5)
+sim.experiment()
+fig, ax = plt.subplots(3,1,figsize=(8,8),sharex=True)
+ax[0].plot(abs(sum(sim.Rs)/niter),label='R')
+ax[0].set_title(f'Diffusion strength of {str(sim.eps)}', color="white")
 ax[0].set_ylabel('R')
-ax[0].plot(sim_eps0_1.taper,alpha=0.5,label='taper')
+ax[0].plot(sim.taper/np.max(sim.taper),alpha=0.5,label='normalized taper')
 ax[0].legend()
 
-sim_eps0_1 = PhaseSimulator(eps=0.1,niter=1000,oscillation_freq=10,PROP_LENGTH=500,random_start=True,use_asym_taper=False,k=2)
-sim_eps0_1.experiment()
-
-ax[1].plot(abs(sum(sim_eps0_1.Rs)/1000),label='R')
-ax[1].set_title(f'R with phase diffusion strength of {str(sim_eps0_1.eps)}', color="white")
-ax[1].set_xlabel('Sample')
+sim = PhaseSimulator(eps=eps,niter=niter,oscillation_freq=10,PROP_LENGTH=500,random_start=True,k=0)
+sim.experiment()
+ax[1].plot(abs(sum(sim.Rs)/niter),label='R')
+ax[1].set_title(f'Diffusion strength of {str(sim.eps)}', color="white")
 ax[1].set_ylabel('R')
-ax[1].plot(sim_eps0_1.taper,alpha=0.5,label='taper')
+ax[1].plot(sim.taper/np.max(sim.taper),alpha=0.5,label='normalized taper')
 ax[1].legend()
 
 
-sim_eps0_1 = PhaseSimulator(eps=0.1,niter=1000,oscillation_freq=10,PROP_LENGTH=500,random_start=True,use_asym_taper=True,k=-2)
-sim_eps0_1.experiment()
-
-ax[2].plot(abs(sum(sim_eps0_1.Rs)/1000),label='R')
-ax[2].set_title(f'R with phase diffusion strength of {str(sim_eps0_1.eps)}', color="white")
-ax[2].set_xlabel('Sample')
+sim = PhaseSimulator(eps=eps,niter=niter,oscillation_freq=10,PROP_LENGTH=500,random_start=True,k=-5)
+sim.experiment()
+ax[2].plot(abs(sum(sim.Rs)/niter),label='R')
+ax[2].set_title(f'Diffusion strength of {str(sim.eps)}', color="white")
+ax[2].set_xlabel('Samples')
 ax[2].set_ylabel('R')
-ax[2].plot(sim_eps0_1.taper,alpha=0.5,label='taper')
+ax[2].plot(sim.taper/np.max(sim.taper),alpha=0.5,label='normalized taper')
 ax[2].legend()
 
 
